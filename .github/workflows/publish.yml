@@ -4,77 +4,32 @@
 # cannot be published at all, so leos-lite cannot reach a cargo registry until
 # this crate sits in one.
 #
-# The fork is level with BitBoxSwiss/rust-bip32-ed25519, so the published crate
-# is the upstream code unchanged. Its license, MIT OR Apache-2.0, permits that.
-#
-# A push to a branch packages the crate and stops. A push of a tag publishes it.
+# This fork is level with BitBoxSwiss/rust-bip32-ed25519, so the published
+# crate is the upstream code unchanged. Its license, MIT OR Apache-2.0, permits
+# that. Nothing here is ever merged back upstream.
 name: publish
 
+# The tag pattern is `bip32-ed25519-v*`, not `v*`: this fork inherited upstream's
+# own v0.1.0 to v0.2.1 tags, so `v0.2.1` already exists and points at a commit
+# that predates this workflow. Ledger releases carry the crate name, the same
+# rule the blst fork follows with `ledger-blst-v*`.
 on:
   push:
-    branches:
-      - master
     tags:
-      - "v*"
-  pull_request:
+      - "bip32-ed25519-v*"
   workflow_dispatch: {}
 
-env:
-  REGISTRY: enclave-cargo-prod-green
-  INDEX: sparse+https://jfrog.ledgerlabs.net/artifactory/api/cargo/enclave-cargo-prod-green/index/
-
 jobs:
-  package:
-    name: Package
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      # Proves that the crate packages cleanly without reaching the registry.
-      - name: Package
-        run: cargo package --list
-
   publish:
-    name: Publish
-    needs: package
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-24.04
     permissions:
       contents: read
-      id-token: write # Required for JFrog OIDC authentication
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Check that the tag matches the crate version
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          version=$(cargo metadata --no-deps --format-version 1 \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
-          if [ "v${version}" != "${TAG}" ]; then
-            echo "Tag ${TAG} does not match crate version ${version}." >&2
-            exit 1
-          fi
-
-      - name: Authenticate against JFrog Artifactory
-        id: jfrog-login
-        uses: LedgerHQ/actions-security/actions/jfrog-login@3868be0ef1ec8722fbdb2c6cda90f739cbfc742d # actions/jfrog-login-1
-        env:
-          JFROG_REPOSITORY: enclave-cargo-prod-green
-
-      - name: Publish
-        env:
-          # The index and the token reach cargo as environment variables, so this
-          # workflow needs no .cargo/config.toml. The "Bearer " prefix is required.
-          CARGO_REGISTRIES_ENCLAVE_CARGO_PROD_GREEN_INDEX: ${{ env.INDEX }}
-          CARGO_REGISTRIES_ENCLAVE_CARGO_PROD_GREEN_TOKEN: "Bearer ${{ steps.jfrog-login.outputs.oidc-token }}"
-        run: |
-          # A re-run of the same tag must not fail once the version is published.
-          if cargo publish --registry "${REGISTRY}" 2>&1 | tee publish.log; then
-            exit 0
-          fi
-          grep -qi 'already exists\|already been uploaded' publish.log
+      id-token: write # Required for the JFrog OIDC login
+      packages: read # Required to pull the builder image from ghcr.io
+    uses: LedgerHQ/enclave-github-workflows/.github/workflows/job-rust-publish.yml@v1
+    secrets: inherit
+    with:
+      # The team Rust toolchain. This crate needs no SafeNet toolchain, so it
+      # uses the base image rather than a builder of its own.
+      DOCKER_IMAGE_NAME: toolchain-rust-enclave
+      CARGO_REGISTRY: enclave-cargo-prod-green
+      version_prefix: bip32-ed25519-v
