@@ -1,0 +1,35 @@
+# Publishes this crate to the Ledger internal cargo registry.
+#
+# leos-crypto depends on bip32-ed25519. A crate that carries a git dependency
+# cannot be published at all, so leos-lite cannot reach a cargo registry until
+# this crate sits in one.
+#
+# This fork is level with BitBoxSwiss/rust-bip32-ed25519, so the published
+# crate is the upstream code unchanged. Its license, MIT OR Apache-2.0, permits
+# that. Nothing here is ever merged back upstream.
+name: publish
+
+# The tag pattern is `bip32-ed25519-v*`, not `v*`: this fork inherited upstream's
+# own v0.1.0 to v0.2.1 tags, so `v0.2.1` already exists and points at a commit
+# that predates this workflow. Ledger releases carry the crate name, the same
+# rule the blst fork follows with `ledger-blst-v*`.
+on:
+  push:
+    tags:
+      - "bip32-ed25519-v*"
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      id-token: write # Required for the JFrog OIDC login
+      packages: read # Required to pull the builder image from ghcr.io
+    uses: LedgerHQ/enclave-github-workflows/.github/workflows/job-rust-publish.yml@v1
+    secrets: inherit
+    with:
+      # The team Rust toolchain. This crate needs no SafeNet toolchain, so it
+      # uses the base image rather than a builder of its own.
+      DOCKER_IMAGE_NAME: toolchain-rust-enclave
+      CARGO_REGISTRY: enclave-cargo-prod-green
+      version_prefix: bip32-ed25519-v
